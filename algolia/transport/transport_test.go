@@ -101,3 +101,37 @@ func TestUnmarshallTo(t *testing.T) {
 		require.Equal(t, v.expectedBody, bodyDeserialized)
 	}
 }
+
+type FakeRequester struct {
+	Error error
+}
+
+func (f *FakeRequester) Request(req *http.Request) (*http.Response, error) {
+	if f.Error == nil {
+		return http.DefaultClient.Do(req)
+	}
+
+	return nil, f.Error
+}
+
+func TestShouldNotPanicOnError(t *testing.T) {
+	hosts := []*StatefulHost{NewStatefulHost("", call.IsReadWrite)}
+	requester := &FakeRequester{Error: fmt.Errorf("oh no")}
+
+	transporter := New(
+		hosts,
+		requester,
+		"appID",
+		"apiKey",
+		time.Second,
+		time.Second,
+		nil,
+		"",
+		compression.None,
+	)
+
+	opts := []interface{}{opt.ExposeIntermediateNetworkErrors(true)}
+	var res string
+	err := transporter.Request(&res, http.MethodGet, "", nil, call.Read, opts...)
+	require.EqualError(t, err, "cannot perform request:\n\terror=oh no\n\tmethod=GET\n\turl=https:")
+}
